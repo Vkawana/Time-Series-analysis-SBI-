@@ -1,0 +1,259 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+# # Required Packages
+packages = c('quantmod','car','forecast','tseries','FinTS', 'rugarch','utf8','ggplot2')
+# 
+# # Install all Packages with Dependencies
+#install.packages(packages, dependencies = TRUE)
+# 
+# # Load all Packages
+lapply(packages, require, character.only = TRUE)
+
+##
+# 0.1. Fetch Single Stock/Index Data
+getSymbols(Symbols = 'SBIN.NS', 
+           src = 'yahoo', 
+           from = as.Date('2018-01-01'), 
+           to = as.Date('2023-12-31'),
+           periodicity = 'daily')
+
+stock_price = na.omit(SBIN.NS$SBIN.NS.Adjusted) # Adjusted Closing Price
+class(stock_price) # xts (Time-Series) Object
+
+stock_ret = na.omit(diff(log(stock_price))) # Stock Returns
+plot(stock_price)
+plot(stock_ret)
+```
+```{r}
+# Augmented Dickey-Fuller (ADF) Test for Stationarity with Stock Data
+
+adf_test_stk_price = adf.test(stock_price); adf_test_stk_price  # Inference : Stock price Time-Series is Non-Stationary
+
+adf_test_stk_ret = adf.test(stock_ret); adf_test_stk_ret # Inference : Stock Difference Time-Series is Stationary
+```
+
+Objective: To assess the stationarity of the stock price and stock return time series.
+
+Analysis: In this analysis, the Augmented Dickey-Fuller (ADF) test was employed to determine the stationarity of two time series: stock prices and stock returns. The ADF test is a common statistical test used to identify whether a given time series is stationary or non-stationary. A stationary time series is one whose statistical properties such as mean, variance, and autocorrelation are constant over time. For both tests, a lag order of 11 was used.
+
+Result:
+- For the stock price time series, the Dickey-Fuller statistic is -2.3339 with a p-value of 0.437. Given the high p-value (greater than the typical significance level of 0.05), we fail to reject the null hypothesis, suggesting that the stock price time series is non-stationary.
+- For the stock return time series, the Dickey-Fuller statistic is -9.6426 with a p-value of 0.01. The low p-value (less than the typical significance level of 0.05) indicates that we can reject the null hypothesis, suggesting that the stock return time series is stationary.
+
+Implication: The analysis reveals distinct characteristics of the stock price and stock return time series. The non-stationarity of the stock price time series implies that it has time-dependent structures such as trends or varying volatility, which are common in financial time series data. In contrast, the stationarity of the stock return time series suggests that its statistical properties do not change over time, making it more suitable for certain statistical modeling and forecasting techniques. Understanding the stationarity of financial time series is crucial for selecting appropriate models for analysis and forecasting in financial market studies.
+
+
+```{r}
+# Ljung-Box Test for Autocorrelation - Stock Data
+# ***********************************************
+
+lb_test_stk_ret = Box.test(stock_ret); lb_test_stk_ret # Inference : Stock Difference (Stationary) Time-Series is Autocorrelated
+
+# Autocorrelation Function (ACF) | Partial Autocorrelation Function (PACF)
+# *****************************************************************************
+
+acf(stock_price) # ACF of Stock Price
+pacf(stock_price) # PACF of Stock Price
+
+acf(stock_ret) # ACF of Stock Return (Stationary) Series
+pacf(stock_ret) # PACF of Stock Return (Stationary) Series
+```
+Objective: To evaluate the presence of autocorrelation within the stationary stock return time series.
+
+Analysis: The Ljung-Box test, also known as the Box-Pierce test in its original form, was applied to the stock return time series to detect any autocorrelation. Autocorrelation refers to the correlation of a time series with its own past and future values. The presence of autocorrelation in financial time series can indicate patterns or trends that may be exploited for forecasting or trading strategies. 
+
+Result:
+- The Ljung-Box test, conducted on the stock return time series, yielded an X-squared value of 0.52502 with 1 degree of freedom and a p-value of 0.4687. Given the high p-value (greater than the typical significance level of 0.05), there is insufficient evidence to reject the null hypothesis, which suggests that the stock return time series does not exhibit significant autocorrelation at lag 1.
+
+Implication: The lack of significant autocorrelation in the stationary stock return time series implies that past returns are not a reliable predictor of future returns at the first lag. This characteristic is consistent with the Efficient Market Hypothesis (EMH), which posits that asset prices fully reflect all available information, making it difficult to achieve consistently higher returns than the market average. For traders and analysts, this result suggests that simple predictive models based on past returns may not be effective for forecasting future returns of this stock at the first lag. However, it's important to consider autocorrelation at other lags or incorporate additional variables or more sophisticated models for a comprehensive analysis.
+```{r}
+# Auto ARIMA
+arma_pq_stk_ret = auto.arima(stock_ret); arma_pq_stk_ret
+arma_pq_stk = auto.arima(stock_price); arma_pq_stk
+```
+Objective: To identify an optimal autoregressive integrated moving average (ARIMA) model for the stock return time series.
+
+Analysis: The auto.arima function was utilized to automatically select the best fitting ARIMA model for the stock return time series. This function iteratively explores various combinations of AR (autoregression), I (integration), and MA (moving average) components to find the model that best captures the time series data according to information criteria such as the Akaike Information Criterion (AIC), the corrected AIC (AICc), and the Bayesian Information Criterion (BIC).
+
+Result:
+- The auto.arima function identified an ARIMA(0,0,0) model with zero mean as the best fit for the stock return time series. This model, also known as a white noise model, indicates that there are no AR or MA components required to model the data effectively. The model parameters are as follows:
+    - sigma^2 (variance of the model's errors) = 0.0004515
+    - Log likelihood = 3600.16
+    - AIC = -7198.33
+    - AICc = -7198.32
+    - BIC = -7193.03
+
+Implication: The selection of an ARIMA(0,0,0) model with zero mean suggests that the stock return time series behaves as a random walk or white noise process, where future values cannot be predictably determined from past values. This outcome reinforces the notion of market efficiency within the context of the analyzed data, indicating that the stock returns do not exhibit autocorrelations or patterns that could be exploited for predictive purposes. For financial analysts and investors, this model implies that traditional time series forecasting techniques may not be effective in predicting future returns of this stock, highlighting the importance of considering other factors or employing different strategies for investment decision-making.
+Arima 2
+Objective: To determine the most suitable ARIMA model for the stock price time series.
+
+Analysis: The auto.arima function, a tool designed to automatically identify the best ARIMA model, was applied to the stock price time series. This function assesses various combinations of the AR (autoregression), I (integration), and MA (moving average) parameters to select a model that optimally fits the data based on specific criteria, such as the Akaike Information Criterion (AIC), the corrected Akaike Information Criterion (AICc), and the Bayesian Information Criterion (BIC).
+
+Result:
+- The optimal ARIMA model identified for the stock price time series is an ARIMA(0,1,0). This model does not include any autoregressive (AR) or moving average (MA) components but indicates that differencing the data once (I=1) renders it stationary. The model parameters are detailed as follows:
+    - sigma^2 (the variance of the model's errors) = 49.67
+    - Log likelihood = -4990.03
+    - AIC = 9982.06
+    - AICc = 9982.06
+    - BIC = 9987.36
+
+Implication: The selection of an ARIMA(0,1,0) model suggests that the stock price series is a random walk with no predictable pattern in its fluctuations when differenced once. This characteristic is common in financial time series, supporting the hypothesis that stock prices follow a random walk and thus, their future prices are not directly predictable based on past values alone. For market participants, this finding underscores the challenge of forecasting future stock prices using historical price data alone and highlights the importance of incorporating a broader range of market analysis, financial indicators, and possibly, external economic factors for effective investment strategies.
+
+```{r}
+# Ljung-Box Test for Autocorrelation - Model Residuals
+# ****************************************************
+lb_test_arma_pq_stk_ret = Box.test(arma_pq_stk_ret$residuals); lb_test_arma_pq_stk_ret
+
+# Forecasting with ARIMA Models
+# ************************************
+# jj_ds_f11 = predict(arma11, n.ahead = 40)
+# plot(jj_ds_f11)
+# lines(jj_ds_f11$pred, col = 'blue')
+# lines(jj_ds_f11$pred + 2 * jj_ds_f11$se, col = 'red')
+# lines(jj_ds_f11$pred - 2 * jj_ds_f11$se, col = 'red')
+
+stock_ret_fpq = forecast(arma_pq_stk_ret, h = 40)
+plot(stock_ret_fpq)
+
+stock_fpq = forecast(arma_pq_stk, h = 40)
+plot(stock_fpq)
+```
+Objective: To examine the presence of autocorrelation in the residuals of the fitted ARIMA model for the stock return time series.
+
+Analysis: The Ljung-Box test, specifically the Box-Pierce version in this case, was conducted on the residuals of the ARIMA model fitted to the stock return time series. This statistical test is crucial for model diagnostics, aiming to detect any remaining autocorrelation in the residuals that could indicate a lack of fit or the potential for further model improvement. Autocorrelation in the residuals suggests that some pattern in the data has not been captured by the model, which could potentially be exploited for better predictions.
+
+Result:
+- The Ljung-Box test applied to the residuals of the ARIMA model yielded an X-squared value of 0.52502 with 1 degree of freedom and a p-value of 0.4687. Given the relatively high p-value (greater than the typical significance level of 0.05), there is insufficient evidence to reject the null hypothesis, indicating that the residuals do not exhibit significant autocorrelation at the first lag.
+
+Implication: The lack of significant autocorrelation in the residuals of the fitted ARIMA model for the stock return time series suggests that the model has adequately captured the underlying process generating the data. This result implies that the residuals are essentially random, as desired in a well-fitted time series model, indicating no obvious patterns or trends that the model failed to capture. For analysts and investors, this finding supports the reliability of the selected ARIMA(0,0,0) model with zero mean for forecasting purposes, underlining that the model residuals do not contain autocorrelations that could have been leveraged to improve the model further.
+```{r}
+# Test for Volatility Clustering or Heteroskedasticity: Box Test 
+stk_ret_sq = arma_pq_stk_ret$residuals^2 # Return Variance (Since Mean Returns is approx. 0)
+plot(stk_ret_sq)
+stk_ret_sq_box_test = Box.test(stk_ret_sq, lag = 10) # H0: Return Variance Series is Not Serially Correlated
+stk_ret_sq_box_test # Inference : Return Variance Series is Heteroskedastic (Has Volatility Clustering)
+
+# Test for Volatility Clustering or Heteroskedasticity: ARCH Test
+stk_ret_arch_test = ArchTest(arma_pq_stk_ret$residuals, lags = 10) # H0: No ARCH Effects
+stk_ret_arch_test # Inference : Return Series is Heteroskedastic (Has Volatility Clustering)
+```
+Objective: To assess the presence of volatility clustering or heteroskedasticity in the stock return series, which indicates whether variances of the series change over time.
+
+Analysis: Two tests were conducted on the squared residuals of the fitted ARIMA model to the stock return series to detect volatility clustering or heteroskedasticity:
+
+1. **Box Test for Serial Correlation in Return Variance:** Squaring the residuals emphasizes variations in volatility, making it easier to detect patterns of volatility clustering. The Box-Pierce test, a form of the Ljung-Box test, was applied to these squared residuals with a lag of 10 to test for serial correlation.
+
+2. **ARCH (Autoregressive Conditional Heteroskedasticity) Test:** This test specifically looks for ARCH effects, where current period variances are dependent on the variances of previous periods, indicating volatility clustering.
+
+Result:
+- **Box-Pierce Test:** The test yielded an X-squared value of 463.71 with 10 degrees of freedom and a p-value less than 2.2e-16. This statistically significant result strongly rejects the null hypothesis, indicating that the return variance series is serially correlated, suggesting volatility clustering or heteroskedasticity.
+
+- **ARCH Test:** The ARCH test reported a Chi-squared value of 222.71 with 10 degrees of freedom and a p-value less than 2.2e-16. Similar to the Box-Pierce test, this result significantly rejects the null hypothesis of no ARCH effects, confirming the presence of heteroskedasticity or volatility clustering in the return series.
+
+Implication: The presence of volatility clustering or heteroskedasticity in the stock return series has significant implications for financial modeling and risk management. This phenomenon, where large changes in returns are likely to be followed by large changes (of either sign) and small changes by small changes, challenges the assumption of constant volatility used in many financial models, including the basic ARIMA model for returns. For investors and risk managers, acknowledging volatility clustering is crucial for accurate risk assessment, option pricing, and portfolio management. It suggests the need for models that can adapt to changing variances over time, such as GARCH (Generalized Autoregressive Conditional Heteroskedasticity) models, to better forecast future volatility and optimize investment strategies.
+```{r}
+# GARCH Model
+garch_model1 = ugarchspec(variance.model = list(model = 'sGARCH', garchOrder = c(1,1)), mean.model = list(armaOrder = c(0,0), include.mean = TRUE))
+nse_ret_garch1 = ugarchfit(garch_model1, data = arma_pq_stk_ret$residuals); nse_ret_garch1
+
+garch_model2 = ugarchspec(variance.model = list(model = 'sGARCH', garchOrder = c(1,1)), mean.model = list(armaOrder = c(4,5), include.mean = FALSE))
+nse_ret_garch2 = ugarchfit(garch_model2, data = arma_pq_stk_ret$residuals); nse_ret_garch2
+
+# Test for Volatility Clustering or Heteroskedasticity: ARCH Test
+gar_resd = residuals(nse_ret_garch2)^2
+stk_ret_arch_test1 = ArchTest(gar_resd, lags = 1) # H0: No ARCH Effects
+stk_ret_arch_test1 # Inference : Return Series is Heteroskedastic (Has Volatility Clustering)
+```
+Garch model 1 
+Objective: To analyze the volatility of stock returns using the GARCH model.
+
+Analysis: The GARCH(1,1) model was fitted on the residuals of the stock returns to understand the volatility dynamics. The model includes a constant mean (ARFIMA(0,0,0)) and assumes a normal distribution for the error terms. The optimal parameters, along with their standard errors, t-values, and p-values, indicate the significance and impact of each component on the model. The diagnostics include various tests for serial correlation, ARCH effects, stability, and goodness-of-fit to assess the model's adequacy.
+
+Result:
+- The mean (mu) of the residuals is significantly different from zero at a 10% level, suggesting a small but significant average return in the data.
+- The GARCH(1,1) parameters (omega, alpha1, beta1) are highly significant, indicating the presence of volatility clustering, where large changes in stock returns are likely to be followed by large changes (of either sign), and small changes by small changes.
+- The sum of alpha1 and beta1 is close to 1 (approximately 0.981), suggesting a high level of persistence in volatility.
+- The Ljung-Box test on standardized residuals suggests no serial correlation, indicating that the model captures the time-series properties well.
+- However, the Ljung-Box test and ARCH LM test on squared residuals indicate some remaining ARCH effects, suggesting potential room for improvement in modeling the conditional variance.
+- The Nyblom stability test results suggest that the model parameters are stable over the sample.
+- The Sign Bias Test indicates potential asymmetry in the model since the Sign Bias and Positive Sign Bias have p-values close to the significance level, suggesting that the model's response to positive and negative shocks might differ.
+- The Adjusted Pearson Goodness-of-Fit Test shows that the model may not perfectly fit the data distribution, as indicated by the significant p-values across different groupings, suggesting potential deviations from normality in the residuals.
+
+Implication: The GARCH(1,1) model effectively captures the volatility dynamics in the stock returns, indicating significant and persistent volatility clustering. However, the presence of residual ARCH effects and the goodness-of-fit tests suggest that exploring more complex GARCH models or alternative distributions for the error terms could potentially improve the model. This analysis is crucial for understanding risk and for making informed investment decisions, as it highlights the importance of considering volatility in the financial markets.
+
+
+
+Garch model 2
+**Objective:** To analyze the volatility and predict future movements in stock returns using the GARCH model.
+
+**Analysis:** In this segment, a sophisticated GARCH(1,1) model combined with an ARFIMA(4,0,5) mean model was employed to fit the time series of stock return residuals. This approach allows for capturing both the persistence of volatility and the dynamics of the mean return. The distribution assumed for the residuals is normal. The analysis includes checking for the model's fit, the significance of its parameters, and conducting diagnostic tests for serial correlation, ARCH effects, and the stability of the parameters over time.
+
+**Result:**
+- **Parameter Significance:** Almost all parameters in the ARFIMA and GARCH model are highly significant (p-values close to 0), suggesting a strong influence of past returns and volatilities on current volatility. This indicates a good model fit.
+- **Volatility Dynamics:** The estimates for `alpha1` (0.075594) and `beta1` (0.907349) suggest a high level of volatility persistence, indicating that shocks to volatility tend to have a lasting effect.
+- **Model Fit and Diagnostics:**
+  - The Log-Likelihood value is high (3739.618), and the information criteria (Akaike, Bayes, Shibata, Hannan-Quinn) suggest a good model fit.
+  - The Ljung-Box test on standardized residuals shows no serial correlation in the residuals at various lags, indicating that the model captures the time series dynamics well.
+  - The Ljung-Box test on standardized squared residuals and the ARCH LM tests indicate some remaining ARCH effects, suggesting potential room for improvement in capturing volatility clustering.
+  - The Nyblom stability test indicates overall stability of the parameters, though `omega` shows a higher statistic, hinting at possible concerns over the stability of the constant term in the variance equation.
+
+**Implication:** The fitted GARCH(1,1) model with an ARFIMA(4,0,5) mean component effectively captures the conditional volatility and mean dynamics of the stock return series, evidenced by significant parameter estimates and generally favorable diagnostic tests. However, the presence of residual ARCH effects suggests that further refinement of the model, such as exploring different distributions for residuals or incorporating additional terms, could improve the model's performance. This model serves as a valuable tool for forecasting future volatility, which is crucial for risk management and derivative pricing in financial markets.
+
+
+### Objective: To analyze the volatility and stability of stock returns using the GARCH model.
+
+### Analysis:
+In this analysis, a GARCH(1,1) model was fitted to the residuals of stock returns to understand the volatility dynamics. The model includes parameters for the mean (mu), variance (omega), and GARCH coefficients (alpha1 for ARCH and beta1 for GARCH effects). Several statistical tests and metrics were used to evaluate the model fit and the characteristics of the stock return series.
+
+### Result:
+- The GARCH(1,1) model parameters show significant values, indicating a good fit to the data. Specifically, alpha1 (0.077532) and beta1 (0.903521) are significant, suggesting persistence in volatility.
+- The log-likelihood value is 3737.259, and the information criteria (Akaike, Bayes, Shibata, Hannan-Quinn) suggest a good model fit.
+- The Ljung-Box and ARCH LM tests on standardized residuals and squared residuals indicate no serial correlation in the residuals but suggest the presence of volatility clustering.
+- The Nyblom stability test indicates the model parameters are stable over time.
+- The Sign Bias and Joint Effect tests reveal some biases in the model, indicating the presence of leverage effects.
+- The Adjusted Pearson Goodness-of-Fit Test shows the model might not perfectly capture the distribution of the returns, suggesting room for improvement.
+
+Additionally, an ARCH test performed on the squared residuals of a subsequent GARCH model fitting (referred to as `nse_ret_garch2`) strongly rejects the null hypothesis of no ARCH effects (p-value < 2.2e-16), confirming the presence of volatility clustering or heteroskedasticity in the return series.
+
+### Implication:
+- The analysis confirms the stock returns exhibit volatility clustering, a common characteristic in financial time series, where large changes in returns are likely to be followed by large changes (of either sign), and small changes are likely to be followed by small changes.
+- The significant GARCH(1,1) model parameters indicate that past volatility (alpha1) and conditional variance (beta1) are predictive of future volatility, suggesting a level of predictability in the volatility of stock returns.
+- The presence of leverage effects and the need for model improvements suggest that investors and risk managers should consider more complex models or additional variables to better capture the dynamics of stock returns.
+- The confirmed presence of heteroskedasticity through the ARCH test highlights the importance of using volatility models like GARCH for financial time series analysis, as assumptions of constant volatility may lead to misestimation of risk and suboptimal investment decisions.
+```{r}
+garch_modelf = ugarchspec(variance.model = list(model = 'sGARCH', garchOrder = c(1,1)), mean.model = list(armaOrder = c(4,5), include.mean = FALSE))
+stk_ret_garch = ugarchfit(garch_modelf, data = stock_ret); stk_ret_garch
+```
+**Objective:** To analyze the time series dynamics of stock returns using a GARCH model.
+
+**Analysis:** In this part of the analysis, a GARCH(1,1) model combined with an ARFIMA(4,0,5) mean model is fitted to the stock return data. The model does not include a mean term in its specification. The analysis focuses on understanding the volatility and mean reversion characteristics of the stock returns, as well as testing for the presence of serial correlation, ARCH effects, and the stability of the model parameters.
+
+**Result:**
+- **Parameter Estimates:** The ARMA components (AR1 to AR4 and MA1 to MA5) show significant p-values, indicating that these parameters are statistically significant in explaining the stock return series. The GARCH parameters (omega, alpha1, beta1) also show significance except for the omega parameter under robust standard errors, suggesting that past shocks and volatility have a significant impact on current volatility.
+- **Volatility Dynamics:** The GARCH(1,1) parameters, alpha1 (0.075594) and beta1 (0.907349), suggest that the stock return volatility exhibits persistence, as indicated by the high beta1 value. This implies that shocks to volatility are likely to be persistent over time.
+- **Information Criteria:** The Akaike, Bayes, Shibata, and Hannan-Quinn information criteria suggest the model fits the data well, with lower values indicating a better fit.
+- **Serial Correlation Tests:** The Weighted Ljung-Box Test on standardized residuals does not reject the null hypothesis of no serial correlation, indicating that the model adequately captures the time series dynamics without leaving unexplained serial correlation in the residuals.
+- **ARCH Effects:** The Weighted ARCH LM Tests and the Weighted Ljung-Box Test on standardized squared residuals show mixed results on the presence of ARCH effects, with some p-values indicating significance. This suggests the need for further investigation into potential remaining ARCH effects in the residuals.
+- **Stability Tests:** The Nyblom stability test results indicate that the model parameters are stable over the sample period, as the joint and individual statistics do not exceed the critical values significantly.
+
+**Implication:** The analysis demonstrates that the specified GARCH model with an ARFIMA mean process is effective in capturing the dynamics of stock return volatility, with significant ARMA and GARCH effects indicating both mean reversion and volatility persistence. The model's adequacy is supported by the lack of serial correlation in the residuals and the parameter stability. However, the presence of potential ARCH effects in some tests suggests that the model's specification could be further refined to capture all dynamics present in the stock return series.
+```{r}
+# GARCH Forecast
+stk_ret_garch_forecast1 = ugarchforecast(stk_ret_garch, n.ahead = 50); stk_ret_garch_forecast1
+plot(stk_ret_garch_forecast1)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
